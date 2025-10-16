@@ -1,8 +1,8 @@
-import { APIGatewayProxyHandlerV2 } from 'aws-lambda';
-import { getUserByEmail, putUser, updateLoginMeta } from '../lib/db';
-import { hashPassword, verifyPassword } from '../lib/crypto';
-import { signAccessToken, signRefreshToken } from '../lib/jwt';
-import { safeParseRegister, safeParseLogin } from '../lib/validation';
+import type { APIGatewayProxyHandlerV2 } from 'aws-lambda';
+import { getUserByEmail, putUser, updateLoginMeta } from '../lib/db.js';
+import { hashPassword, verifyPassword } from '../lib/crypto.js';
+import { signAccessToken, signRefreshToken } from '../lib/jwt.js';
+import { safeParseRegister, safeParseLogin } from '../lib/validation.js';
 
 export const register: APIGatewayProxyHandlerV2 = async (event) => {
   try {
