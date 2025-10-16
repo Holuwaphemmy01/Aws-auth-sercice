@@ -1,0 +1,55 @@
+import { APIGatewayProxyHandlerV2 } from 'aws-lambda';
+import { getUserByEmail, putUser, updateLoginMeta } from '../lib/db';
+import { hashPassword, verifyPassword } from '../lib/crypto';
+import { signAccessToken, signRefreshToken } from '../lib/jwt';
+import { safeParseRegister, safeParseLogin } from '../lib/validation';
+
+export const register: APIGatewayProxyHandlerV2 = async (event) => {
+  try {
+    const body = JSON.parse(event.body ?? '{}');
+    const data = safeParseRegister(body);
+
+    const exists = await getUserByEmail(data.email);
+    if (exists) return resp(409, { message: 'User exists' });
+
+    const password_hash = await hashPassword(data.password);
+    await putUser({ email: data.email, name: data.name, password_hash });
+
+    console.log(JSON.stringify({ event: 'user_registered', email: data.email }));
+    return resp(201, { message: 'Registered' });
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', msg: 'register_failed', err: (e as Error).message }));
+    return resp(400, { message: 'Invalid payload' });
+  }
+};
+
+export const login: APIGatewayProxyHandlerV2 = async (event) => {
+  const now = new Date().toISOString();
+  try {
+    const body = JSON.parse(event.body ?? '{}');
+    const data = safeParseLogin(body);
+
+    const user = await getUserByEmail(data.email);
+    if (!user || !(await verifyPassword(data.password, user.password_hash))) {
+      console.warn(JSON.stringify({ event: 'login_failed', email: data.email }));
+      return resp(401, { message: 'Invalid credentials' });
+    }
+
+    const accessToken = await signAccessToken({ sub: user.email });
+    const refreshToken = await signRefreshToken({ sub: user.email });
+
+    await updateLoginMeta(user.email, { lastLoginAt: now, failedLoginCount: 0 });
+
+    console.log(JSON.stringify({ event: 'login_success', email: user.email }));
+    return resp(200, { accessToken, refreshToken });
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', msg: 'login_failed', err: (e as Error).message }));
+    return resp(400, { message: 'Invalid payload' });
+  }
+};
+
+const resp = (statusCode: number, body: unknown) => ({
+  statusCode,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
