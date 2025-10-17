@@ -54,10 +54,7 @@ export const register = async (event: any): Promise<LambdaResponse> => {
   }
 };
 
-/**
- * login handler
- * Expects event.body = JSON string { email, password }
- */
+
 export const login = async (event: any): Promise<LambdaResponse> => {
   try {
     if (!event?.body) return resp(400, { message: 'Request body is missing' });

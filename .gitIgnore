@@ -1,1 +1,6 @@
 node_modules
+.env
+AWS_REGION=<your-region>
+USERS_TABLE=<your-dynamodb-table-name>
+JWT_SECRET=<your-jwt-secret>
+REFRESH_JWT_SECRET=<your-refresh-jwt-secret>

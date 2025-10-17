@@ -1,7 +1,6 @@
 import { register, login } from '../src/handlers/auth';
 import * as db from '../src/lib/db';
 
-// Mock dependencies
 jest.mock('../src/lib/db');
 jest.mock('../src/lib/crypto', () => ({
   hashPassword: jest.fn().mockResolvedValue('hashed_pw'),
@@ -42,7 +41,6 @@ describe('authHandler', () => {
       name: 'John',
     });
 
-    // ✅ Force return type to `any` to bypass TS complaints
     const result: any = await register(event);
 
     expect(result.statusCode).toBe(201);
