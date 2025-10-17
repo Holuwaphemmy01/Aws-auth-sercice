@@ -4,15 +4,13 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Validate environment variables
 const TABLE_NAME = process.env.TABLE_NAME;
 if (!TABLE_NAME) {
   throw new Error('TABLE_NAME environment variable is required');
 }
 
-// Configure DynamoDB client
 const client = new DynamoDBClient({
-  region: process.env.AWS_REGION || 'us-east-1', // Default region if not set
+  region: process.env.AWS_REGION || 'us-east-1', 
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
@@ -20,7 +18,6 @@ const client = new DynamoDBClient({
 });
 const docClient = DynamoDBDocumentClient.from(client);
 
-// Define user interface
 interface User {
   pk: string;
   sk: string;
@@ -32,7 +29,6 @@ interface User {
   updatedAt?: string;
 }
 
-// Get user by email
 export const getUserByEmail = async (email: string): Promise<User | undefined> => {
   try {
     const res = await docClient.send(
@@ -49,7 +45,6 @@ export const getUserByEmail = async (email: string): Promise<User | undefined> =
   }
 };
 
-// Put user
 export const putUser = async (user: {
   email: string;
   name: string;
@@ -76,7 +71,6 @@ export const putUser = async (user: {
   }
 };
 
-// Update login metadata
 export const updateLoginMeta = async (
   email: string,
   updates: { lastLoginAt?: string; failedLoginCount?: number }
