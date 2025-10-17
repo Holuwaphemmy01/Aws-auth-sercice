@@ -1,78 +1,30 @@
-// import type { APIGatewayProxyHandlerV2 } from 'aws-lambda';
-// import { getUserByEmail, putUser, updateLoginMeta } from '../lib/db.js';
-// import { hashPassword, verifyPassword } from '../lib/crypto.js';
-// import { signAccessToken, signRefreshToken } from '../lib/jwt.js';
-// import { safeParseRegister, safeParseLogin } from '../lib/validation.js';
-
-// export const register: APIGatewayProxyHandlerV2 = async (event) => {
-//   try {
-//     const body = JSON.parse(event.body ?? '{}');
-//     const data = safeParseRegister(body);
-
-//     const exists = await getUserByEmail(data.email);
-//     if (exists) return resp(409, { message: 'User exists' });
-
-//     const password_hash = await hashPassword(data.password);
-//     await putUser({ email: data.email, name: data.name, password_hash });
-
-//     console.log(JSON.stringify({ event: 'user_registered', email: data.email }));
-//     return resp(201, { message: 'Registered' });
-//   } catch (e) {
-//     console.error(JSON.stringify({ level: 'error', msg: 'register_failed', err: (e as Error).message }));
-//     return resp(400, { message: 'Invalid payload' });
-//   }
-// };
-
-// export const login: APIGatewayProxyHandlerV2 = async (event) => {
-//   const now = new Date().toISOString();
-//   try {
-//     const body = JSON.parse(event.body ?? '{}');
-//     const data = safeParseLogin(body);
-
-//     const user = await getUserByEmail(data.email);
-//     if (!user || !(await verifyPassword(data.password, user.password_hash))) {
-//       console.warn(JSON.stringify({ event: 'login_failed', email: data.email }));
-//       return resp(401, { message: 'Invalid credentials' });
-//     }
-
-//     const accessToken = await signAccessToken({ sub: user.email });
-//     const refreshToken = await signRefreshToken({ sub: user.email });
-
-//     await updateLoginMeta(user.email, { lastLoginAt: now, failedLoginCount: 0 });
-
-//     console.log(JSON.stringify({ event: 'login_success', email: user.email }));
-//     return resp(200, { accessToken, refreshToken });
-//   } catch (e) {
-//     console.error(JSON.stringify({ level: 'error', msg: 'login_failed', err: (e as Error).message }));
-//     return resp(400, { message: 'Invalid payload' });
-//   }
-// };
-
-// const resp = (statusCode: number, body: unknown) => ({
-//   statusCode,
-//   headers: { 'Content-Type': 'application/json' },
-//   body: JSON.stringify(body),
-// });
+import { getUserByEmail, putUser, updateLoginMeta } from '../lib/db';
+import { hashPassword, verifyPassword } from '../lib/crypto';
+import { signAccessToken, signRefreshToken } from '../lib/jwt';
+import { safeParseRegister, safeParseLogin } from '../lib/validation';
 
 
+export interface LambdaResponse {
+  statusCode: number;
+  headers: Record<string, string>;
+  body: string;
+}
 
-import type { APIGatewayProxyHandlerV2 } from 'aws-lambda';
-import { getUserByEmail, putUser, updateLoginMeta } from '../lib/db.js';
-import { hashPassword, verifyPassword } from '../lib/crypto.js';
-import { signAccessToken, signRefreshToken } from '../lib/jwt.js';
-import { safeParseRegister, safeParseLogin } from '../lib/validation.js';
+const resp = (statusCode: number, body: unknown): LambdaResponse => ({
+  statusCode,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
 
-export const register: APIGatewayProxyHandlerV2 = async (event) => {
+
+export const register = async (event: any): Promise<LambdaResponse> => {
   try {
-    if (!event.body) {
-      return resp(400, { message: 'Request body is missing' });
-    }
+    if (!event?.body) return resp(400, { message: 'Request body is missing' });
 
-    let body;
+    let body: unknown;
     try {
       body = JSON.parse(event.body);
-    } catch (e) {
-      console.error(JSON.stringify({ level: 'error', msg: 'register_failed', err: (e as Error).message }));
+    } catch (e: any) {
       return resp(400, { message: 'Invalid JSON payload' });
     }
 
@@ -82,44 +34,38 @@ export const register: APIGatewayProxyHandlerV2 = async (event) => {
     }
 
     const exists = await getUserByEmail(data.email);
-    if (exists) {
-      return resp(409, { message: 'User already exists', errorCode: 'USER_EXISTS' });
-    }
+    if (exists) return resp(409, { message: 'User already exists', errorCode: 'USER_EXISTS' });
 
     const password_hash = await hashPassword(data.password);
     await putUser({
       email: data.email,
-      name: data.name,
+      name: data.name ?? '',
       password_hash,
-      // Optionally pass condition to putUser to prevent overwrites
     });
 
-    console.log(JSON.stringify({ event: 'user_registered', email: data.email, requestId: event.requestContext.requestId }));
     return resp(201, { message: 'Registered successfully' });
-  } catch (e) {
-    console.error(JSON.stringify({
+  } catch (err: any) {
+    console.error({
       level: 'error',
       msg: 'register_failed',
-      err: (e as Error).message,
-      stack: (e as Error).stack,
-      requestId: event.requestContext.requestId,
-    }));
+      err: err?.message ?? String(err),
+    });
     return resp(500, { message: 'Internal server error', errorCode: 'INTERNAL_ERROR' });
   }
 };
 
-export const login: APIGatewayProxyHandlerV2 = async (event) => {
-  const now = new Date().toISOString();
+/**
+ * login handler
+ * Expects event.body = JSON string { email, password }
+ */
+export const login = async (event: any): Promise<LambdaResponse> => {
   try {
-    if (!event.body) {
-      return resp(400, { message: 'Request body is missing' });
-    }
+    if (!event?.body) return resp(400, { message: 'Request body is missing' });
 
-    let body;
+    let body: unknown;
     try {
       body = JSON.parse(event.body);
-    } catch (e) {
-      console.error(JSON.stringify({ level: 'error', msg: 'login_failed', err: (e as Error).message }));
+    } catch (e: any) {
       return resp(400, { message: 'Invalid JSON payload' });
     }
 
@@ -130,44 +76,35 @@ export const login: APIGatewayProxyHandlerV2 = async (event) => {
 
     const user = await getUserByEmail(data.email);
     if (!user) {
-      console.warn(JSON.stringify({ event: 'login_failed', email: data.email, reason: 'user_not_found' }));
-      // Optionally increment failedLoginCount for non-existent user
       return resp(401, { message: 'Invalid credentials', errorCode: 'INVALID_CREDENTIALS' });
     }
 
-    const isPasswordValid = await verifyPassword(data.password, user.password_hash);
-    if (!isPasswordValid) {
-      console.warn(JSON.stringify({ event: 'login_failed', email: data.email, reason: 'invalid_password' }));
-      await updateLoginMeta(user.email, {
-        failedLoginCount: (user.failedLoginCount || 0) + 1,
-      });
+    const ok = await verifyPassword(data.password, user.password_hash);
+    if (!ok) {
+      try {
+        await updateLoginMeta(user.email, { failedLoginCount: (user.failedLoginCount ?? 0) + 1 });
+      } catch (e) {
+        console.warn('failed to update login meta', (e as Error).message);
+      }
       return resp(401, { message: 'Invalid credentials', errorCode: 'INVALID_CREDENTIALS' });
     }
 
     const accessToken = await signAccessToken({ sub: user.email });
     const refreshToken = await signRefreshToken({ sub: user.email });
 
-    await updateLoginMeta(user.email, { lastLoginAt: now, failedLoginCount: 0 });
+    try {
+      await updateLoginMeta(user.email, { lastLoginAt: new Date().toISOString(), failedLoginCount: 0 });
+    } catch (e) {
+      console.warn('failed to update login meta', (e as Error).message);
+    }
 
-    console.log(JSON.stringify({ event: 'login_success', email: user.email, requestId: event.requestContext.requestId }));
     return resp(200, { accessToken, refreshToken });
-  } catch (e) {
-    console.error(JSON.stringify({
+  } catch (err: any) {
+    console.error({
       level: 'error',
       msg: 'login_failed',
-      err: (e as Error).message,
-      stack: (e as Error).stack,
-      requestId: event.requestContext.requestId,
-    }));
+      err: err?.message ?? String(err),
+    });
     return resp(500, { message: 'Internal server error', errorCode: 'INTERNAL_ERROR' });
   }
 };
-
-const resp = (statusCode: number, body: unknown) => ({
-  statusCode,
-  headers: {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*', // Adjust for your CORS requirements
-  },
-  body: JSON.stringify(body),
-});

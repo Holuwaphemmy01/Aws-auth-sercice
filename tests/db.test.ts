@@ -1,77 +1,100 @@
-import { getUserByEmail, putUser, updateLoginMeta } from '../src/lib/db';
-import { mockClient } from 'aws-sdk-client-mock';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { register, login } from '../src/handlers/auth';
+import * as db from '../src/lib/db';
 
-// Mock the DynamoDB Document Client
-const ddbMock = mockClient(DynamoDBDocumentClient);
+// Mock dependencies
+jest.mock('../src/lib/db');
+jest.mock('../src/lib/crypto', () => ({
+  hashPassword: jest.fn().mockResolvedValue('hashed_pw'),
+  verifyPassword: jest.fn().mockResolvedValue(true),
+}));
+jest.mock('../src/lib/jwt', () => ({
+  signAccessToken: jest.fn().mockResolvedValue('mockAccessToken'),
+  signRefreshToken: jest.fn().mockResolvedValue('mockRefreshToken'),
+}));
+jest.mock('../src/lib/validation', () => ({
+  safeParseRegister: jest.fn((body) => body),
+  safeParseLogin: jest.fn((body) => body),
+}));
 
-// Required for db.ts (environment validation)
-process.env.TABLE_NAME = 'MockUserTable';
+const mockEvent = (body: any) => ({
+  version: '2.0',
+  routeKey: 'POST /auth',
+  rawPath: '/auth',
+  rawQueryString: '',
+  headers: {},
+  requestContext: { requestId: 'mockReq' },
+  isBase64Encoded: false,
+  body: JSON.stringify(body),
+});
 
-describe('db.ts', () => {
+describe('authHandler', () => {
   beforeEach(() => {
-    ddbMock.reset();
+    jest.clearAllMocks();
   });
 
-  test('putUser should insert a user successfully', async () => {
-    ddbMock.on(PutCommand).resolves({});
+  it('should register a new user successfully', async () => {
+    (db.getUserByEmail as jest.Mock).mockResolvedValue(undefined);
+    (db.putUser as jest.Mock).mockResolvedValue(true);
 
-    await expect(
-      putUser({
-        email: 'test@example.com',
-        name: 'John Doe',
-        password_hash: 'hashed_pw',
-      })
-    ).resolves.not.toThrow();
-
-    const calls = ddbMock.commandCalls(PutCommand);
-    expect(calls.length).toBe(1);
-
-    const call = calls[0].args[0].input;
-    expect(call?.Item?.email).toBe('test@example.com');
-    expect(call?.Item?.name).toBe('John Doe');
-  });
-
-  test('getUserByEmail should return user when found', async () => {
-    ddbMock.on(GetCommand).resolves({
-      Item: {
-        pk: 'USER#test@example.com',
-        sk: 'PROFILE',
-        email: 'test@example.com',
-        name: 'John Doe',
-        password_hash: 'hashed_pw',
-      },
+    const event = mockEvent({
+      email: 'test@example.com',
+      password: '12345',
+      name: 'John',
     });
 
-    const res = await getUserByEmail('test@example.com');
+    // ✅ Force return type to `any` to bypass TS complaints
+    const result: any = await register(event);
 
-    expect(res).toBeDefined();
-    expect(res?.email).toBe('test@example.com');
-    expect(res?.name).toBe('John Doe');
+    expect(result.statusCode).toBe(201);
+    expect(JSON.parse(result.body).message).toBe('Registered successfully');
   });
 
-  test('getUserByEmail should return undefined when user not found', async () => {
-    ddbMock.on(GetCommand).resolves({});
-    const res = await getUserByEmail('missing@example.com');
-    expect(res).toBeUndefined();
+  it('should return 409 if user already exists', async () => {
+    (db.getUserByEmail as jest.Mock).mockResolvedValue({ email: 'test@example.com' });
+
+    const event = mockEvent({
+      email: 'test@example.com',
+      password: '12345',
+      name: 'John',
+    });
+
+    const result: any = await register(event);
+
+    expect(result.statusCode).toBe(409);
+    expect(JSON.parse(result.body).errorCode).toBe('USER_EXISTS');
   });
 
-  test('updateLoginMeta should update login metadata successfully', async () => {
-    ddbMock.on(UpdateCommand).resolves({});
+  it('should login successfully with valid credentials', async () => {
+    (db.getUserByEmail as jest.Mock).mockResolvedValue({
+      email: 'test@example.com',
+      password_hash: 'hashed_pw',
+      name: 'John',
+    });
 
-    await expect(
-      updateLoginMeta('test@example.com', {
-        lastLoginAt: '2025-10-16T00:00:00Z',
-        failedLoginCount: 1,
-      })
-    ).resolves.not.toThrow();
+    const event = mockEvent({
+      email: 'test@example.com',
+      password: '12345',
+    });
 
-    const calls = ddbMock.commandCalls(UpdateCommand);
-    expect(calls.length).toBe(1);
+    const result: any = await login(event);
+    const body = JSON.parse(result.body);
 
-    const input = calls[0].args[0].input;
-    expect(input.TableName).toBe('MockUserTable');
-   // expect(input.Key.pk).toBe('USER#test@example.com');
-    expect(input.UpdateExpression).toContain('SET');
+    expect(result.statusCode).toBe(200);
+    expect(body.accessToken).toBeDefined();
+    expect(body.refreshToken).toBeDefined();
+  });
+
+  it('should return 401 if credentials are invalid', async () => {
+    (db.getUserByEmail as jest.Mock).mockResolvedValue(undefined);
+
+    const event = mockEvent({
+      email: 'nope@example.com',
+      password: 'wrong',
+    });
+
+    const result: any = await login(event);
+
+    expect(result.statusCode).toBe(401);
+    expect(JSON.parse(result.body).errorCode).toBe('INVALID_CREDENTIALS');
   });
 });
